@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .note {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      border-radius: 3px;
+      box-shadow:
+        4px 4px 12px rgba(0,0,0,0.28),
+        0 1px 3px rgba(0,0,0,0.12),
+        inset 0 1px 0 rgba(255,255,255,0.4);
+      overflow: hidden;
+      transition: background-color 0.18s;
+    }
+
+    /* 모서리 접힘 효과 */
+    .note::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 0;
+      height: 0;
+      border-style: solid;
+      border-width: 0 0 20px 20px;
+      border-color: transparent transparent rgba(0,0,0,0.15) transparent;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    /* 헤더 — 드래그 영역 */
+    .header {
+      -webkit-app-region: drag;
+      display: flex;
+      align-items: center;
+      padding: 5px 8px;
+      gap: 5px;
+      background: rgba(0,0,0,0.1);
+      flex-shrink: 0;
+      min-height: 34px;
+      user-select: none;
+    }
+
+    .colors {
+      -webkit-app-region: no-drag;
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: transform 0.12s, border-color 0.12s;
+      flex-shrink: 0;
+    }
+    .dot:hover { transform: scale(1.3); }
+    .dot.active { border-color: rgba(0,0,0,0.5); }
+
+    .spacer { flex: 1; }
+
+    .btn {
+      -webkit-app-region: no-drag;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(0,0,0,0.15);
+      color: rgba(0,0,0,0.6);
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.12s;
+      flex-shrink: 0;
+      font-family: sans-serif;
+    }
+    .btn:hover { background: rgba(0,0,0,0.28); }
+
+    textarea {
+      flex: 1;
+      border: none;
+      outline: none;
+      resize: none;
+      padding: 10px 12px 22px 12px;
+      background: transparent;
+      font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', 'Nanum Gothic', 'Segoe UI', sans-serif;
+      font-size: 13.5px;
+      line-height: 1.7;
+      color: #2a2a2a;
+      caret-color: rgba(0,0,0,0.6);
+      /* 줄 그어진 노트 효과 */
+      background-image: repeating-linear-gradient(
+        transparent,
+        transparent calc(1.7em - 1px),
+        rgba(0,0,0,0.06) calc(1.7em - 1px),
+        rgba(0,0,0,0.06) 1.7em
+      );
+      background-attachment: local;
+    }
+
+    textarea::placeholder { color: rgba(0,0,0,0.3); }
+  </style>
+</head>
+<body>
+  <div class="note" id="note">
+    <div class="header">
+      <div class="colors" id="colors"></div>
+      <div class="spacer"></div>
+      <button class="btn" id="btnAdd" title="새 메모 추가">+</button>
+      <button class="btn" id="btnClose" title="메모 삭제">✕</button>
+    </div>
+    <textarea id="ta" placeholder="메모를 입력하세요…" spellcheck="false"></textarea>
+  </div>
+
+  <script>
+    const COLORS = [
+      '#fff176', // 노랑
+      '#a5d6a7', // 초록
+      '#90caf9', // 파랑
+      '#f48fb1', // 핑크
+      '#ce93d8', // 보라
+      '#ffcc80', // 주황
+    ];
+
+    let noteId = null;
+    const noteEl = document.getElementById('note');
+    const colorsEl = document.getElementById('colors');
+    const ta = document.getElementById('ta');
+
+    // 색상 도트 생성
+    COLORS.forEach(color => {
+      const dot = document.createElement('div');
+      dot.className = 'dot';
+      dot.style.background = color;
+      dot.addEventListener('click', () => applyColor(color, true));
+      colorsEl.appendChild(dot);
+    });
+
+    function applyColor(color, save = false) {
+      noteEl.style.background = color;
+      colorsEl.querySelectorAll('.dot').forEach(d => {
+        const bg = d.style.backgroundColor || d.style.background;
+        // 색상 비교: hex → rgb 변환 없이 data attribute 사용
+        d.classList.toggle('active', d.style.background === color);
+      });
+      if (save && noteId) window.noteAPI.saveColor(noteId, color);
+    }
+
+    // 메인 프로세스에서 노트 데이터 수신
+    window.noteAPI.onData(note => {
+      noteId = note.id;
+      ta.value = note.content || '';
+      applyColor(note.color || COLORS[0]);
+      // 커서를 텍스트 끝으로
+      ta.selectionStart = ta.selectionEnd = ta.value.length;
+      ta.focus();
+    });
+
+    // 내용 자동 저장 (디바운스 400ms)
+    let saveTimer;
+    ta.addEventListener('input', () => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        if (noteId) window.noteAPI.saveContent(noteId, ta.value);
+      }, 400);
+    });
+
+    document.getElementById('btnAdd').addEventListener('click', () => {
+      window.noteAPI.createNote();
+    });
+
+    document.getElementById('btnClose').addEventListener('click', async () => {
+      if (noteId) await window.noteAPI.deleteNote(noteId);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "sticky-notes",
+  "version": "1.0.0",
+  "description": "데스크탑 포스트잇 메모 앱",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^32.0.0"
+  }
+}
